@@ -1,3 +1,4 @@
+# -*- coding=utf-8 -*-
 from mylib.EVInit import EVInit
 import time
 import linecache

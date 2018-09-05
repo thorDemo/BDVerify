@@ -1,12 +1,9 @@
+# -*- coding=utf-8 -*-
 import paramiko
 import platform
 import os
 from paramiko.ssh_exception import SSHException
-from selenium.common.exceptions import TimeoutException
-from selenium.common.exceptions import NoSuchElementException
 from selenium import webdriver
-from selenium.webdriver.support.wait import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 
 class EVInit:

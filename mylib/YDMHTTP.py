@@ -1,4 +1,5 @@
-import http.client, mimetypes, urllib, json, time, requests
+# -*- coding=utf-8 -*-
+import json, time, requests
 
 
 class YDMHttp:
