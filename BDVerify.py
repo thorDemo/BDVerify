@@ -7,7 +7,7 @@ from mylib.YDMHTTP import YDMHttp
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from selenium.common.exceptions import NoSuchElementException, ElementNotVisibleException
+from selenium.common.exceptions import NoSuchElementException, ElementNotVisibleException, WebDriverException
 
 
 class BDVerify:
@@ -33,18 +33,17 @@ class BDVerify:
 
     def add_url(self, url):
         self.driver.get('https://ziyuan.baidu.com/site/siteadd')
-        print('更改协议头')
         http = self.driver.find_element_by_xpath("//div[@id='protocolSelect']/input")
         self.driver.execute_script("arguments[0].value = 'http://'", http)
-        print('添加url:' + url)
         send_url = self.driver.find_element_by_class_name('add-site-input')
         send_url.send_keys('www.' + url)
         self.driver.find_element_by_id('site-add').click()
         time.sleep(2)
-        self.driver.find_element_by_id('captcha-img').click()
         while True:
             try:
-                WebDriverWait(self.driver, 4).until(EC.visibility_of(self.driver.find_element_by_class_name('ml5')))
+                self.driver.find_element_by_id('captcha-img').click()
+                WebDriverWait(self.driver, 10).until(EC.visibility_of(self.driver.find_element_by_class_name('ml5')))
+                time.sleep(2.5)
                 code = self.get_code('add_url')
                 input_code = self.driver.find_element_by_id('captcha')
                 input_code.send_keys(code)
@@ -64,6 +63,22 @@ class BDVerify:
                     input_code.clear()
             except ElementNotVisibleException:
                 print('没有验证码')
+                try:
+                    time.sleep(1)
+                    self.driver.find_element_by_id('check0')
+                    return True
+                except NoSuchElementException:
+                    xpath = "/html/body/div[2]/div[3]/div[2]/div[4]/div[1]/span"
+                    res = self.driver.find_element_by_xpath(xpath).text
+                    if res == '您已添加过这个网站':
+                        self.add_sitemap(url)
+                        return False
+                    print('验证失败')
+                    input_code = self.driver.find_element_by_id('captcha')
+                    input_code.clear()
+            except NoSuchElementException:
+                print('没有验证码')
+                return True
 
     def set_item(self, select):
         print('选择领域')
@@ -86,7 +101,7 @@ class BDVerify:
         if code_type == 'add_url':
             im = im.crop((790, 790, 1000, 860))
         else:
-            im = im.crop((730, 690, 900, 770))
+            im = im.crop((745, 690, 965, 780))
         im.save('code.png')
         # 查询余额
         balance = self.yundama.balance()
@@ -108,6 +123,7 @@ class BDVerify:
                 os.remove(self.upload_path + filename[0])
         except IndexError:
             pass
+        time.sleep(1)
         WebDriverWait(self.driver, 5).until(EC.visibility_of(self.driver.find_element_by_xpath('//*[@id="file"]/p[2]/a')))
         self.driver.find_element_by_xpath("//dd[@id='file']/p[2]/a[1]").click()
         while True:
@@ -117,9 +133,9 @@ class BDVerify:
                 size = os.path.getsize(self.upload_path + name)
                 if name.endswith('.html') and size > 5:
                     print('已找到下载文件' + name)
-                    time.sleep(1)
+                    time.sleep(0.5)
                     break
-            except IndexError:
+            except (IndexError, FileNotFoundError):
                 continue
         print('上传本地文件')
         while True:
@@ -141,8 +157,8 @@ class BDVerify:
                 raise TimeoutException
             files = self.sftp.listdir(self.remote_path)
             for name in files:
-                print(name.strip('\n') + '  对比文件  ' + filename[0])
                 if str(name) == str(filename[0]):
+                    print(name.strip('\n') + '  对比文件  ' + filename[0])
                     state = False
                     break
             print('等待上传...')
@@ -167,11 +183,12 @@ class BDVerify:
         select = self.driver.find_element_by_xpath("//*[@id='submit-method-type']/li[@tab-value='sitemap']")
         self.driver.execute_script("arguments[0].scrollIntoView();", select)  # 拖动到可见的元素去
         select.click()
+        time.sleep(2)
         text = self.driver.find_element_by_xpath('//*[@id="url-list"]/tbody/tr/td[2]').text
         if text == '暂无数据':
             select = self.driver.find_element_by_id("urls")
             select.click()
-            select.send_keys('www.%s/sitemap.xml' % url)
+            select.send_keys('www.%s/sitemap.xml' % url.strip('\n'))
             select = self.driver.find_element_by_xpath("//*[@id='captcha-img']/span")
             select.click()
             WebDriverWait(self.driver, 4).until(EC.visibility_of(self.driver.find_element_by_class_name('ml5')))
@@ -180,9 +197,12 @@ class BDVerify:
                     verify = self.get_code('add_sitemap')
                     select = self.driver.find_element_by_id("captcha")
                     select.send_keys(verify)
-                    self.driver.find_element_by_id('btn-submit').click()
+                    try:
+                        self.driver.find_element_by_id('btn-submit').click()
+                    except WebDriverException:
+                        pass
                     xpath = '//*[@id="dialog-foot"]/button'
-                    WebDriverWait(self.driver, 2).until(EC.visibility_of(self.driver.find_element_by_xpath(xpath)))
+                    WebDriverWait(self.driver, 4).until(EC.visibility_of(self.driver.find_element_by_xpath(xpath)))
                     self.driver.find_element_by_xpath(xpath).click()
                     print('添加成功')
                     break
@@ -195,14 +215,43 @@ class BDVerify:
 
 if __name__ == '__main__':
     BD = BDVerify()
+    num = len(linecache.getlines('domain.txt'))
+    temp_num = 0
+    item_list = ['影视动漫', '生活服务', '工具服务及在线查询',
+                 '教育培训', '游戏', '书籍文档', '信息技术',
+                 '网络购物', '医疗', '新闻资讯', '生活和情感',
+                 '金融', '社交网络平台', '音乐', '机动车', '生产制造',
+                 '政策法规', '综合门户', '历史军事','母婴', '招商联盟',
+                 '旅游', '民生', '体育运动', '其它']
+    try:
+        for x in range(1, num + 1):
+            domain = linecache.getline('domain.txt', x)
+            item = linecache.getline('item.txt', x).split(' ')
+            print('当前运行至第 %s 行 域名为 http://www.%s' % (x, domain))
+            temp_num = x - 1
+            print('领域设置为 %s %s %s' % (item_list[int(item[0])], item_list[int(item[1])], item_list[int(item[2])]))
+            result = BD.add_url(domain)
+            print(result)
+            if result:
+                BD.set_item([9, 17, 24])
+                BD.file_verify()
+                BD.add_sitemap(domain)
+    except:
+        print('删除已经成功添加的域名 %s 行 ' % temp_num)
+        with open("domain.txt", "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        with open("domain.txt", "w", encoding="utf-8") as f:
+            num = 0
+            for line in lines:
+                if num >= temp_num:
+                    f.write(line)
+                num += 1
+        with open("item.txt", "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        with open("item.txt", "w", encoding="utf-8") as f:
+            num = 0
+            for line in lines:
+                if num >= temp_num:
+                    f.write(line)
+                num += 1
 
-    domain = linecache.getline('domain.txt', 1)
-    item = linecache.getline('item.txt', 1)
-    print(domain)
-    print(item)
-
-    # result = BD.add_url('bjgirls.cn')
-    # print(result)
-    # if result:
-    #     BD.set_item([9, 17, 24])
-    #     BD.file_verify()
